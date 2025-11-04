@@ -1,0 +1,4 @@
+C:\mingw64\bin\gcc client.c -l"ws2_32" -o cliente
+
+
+Este arquivo cliente é destinado somente para teste do servidor, onde será possível testar comunicação com o servidor socket
