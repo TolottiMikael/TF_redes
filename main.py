@@ -27,7 +27,9 @@ def load_neighbors(filename: str) -> set:
     neighbors = set()
     try:
         with open(filename, "r") as f:
+            print(f"arquivo f {f} ")
             for line in f:
+                print(f"resolvendo {line} agora mesmo")
                 ip = line.strip()
                 if ip:
                     neighbors.add(ip)

@@ -9,7 +9,7 @@ from logging_utils import format_table
 class Router:
     def __init__(self, ip: str, neighbors: Set[str]):
         self.ip = ip
-        self.neighbors = set(neighbors)  # ips (strings)
+        self.neighbors = neighbors  # ips (strings)
         # tabela: dest_ip -> (metric:int, next_hop:str, last_updated_ts:float, origin:str)
         # origin: 'local' (configuração direta / vizinho físico) ou 'learned' (recebida de anúncio)
         self.table: Dict[str, Tuple[int, str, float, str]] = {}
@@ -28,6 +28,8 @@ class Router:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((self.ip, PORT))
         self.sock.settimeout(1.0)
+
+
         # control
         self._stop_event = threading.Event()
 
@@ -40,6 +42,7 @@ class Router:
     # ------------------------
     def send_to(self, dest_ip: str, message: str):
         try:
+            print(f"enviando msg para ({dest_ip},{PORT}) : => {message}")
             self.sock.sendto(message.encode('utf-8'), (dest_ip, PORT))
         except OSError as e:
             print(f"[WARN] Erro ao enviar para {dest_ip}: {e}")
@@ -54,7 +57,9 @@ class Router:
         for n in list(self.neighbors):
             payload = serialize_table_for_neighbor(table_copy, n, self.ip)
             # if payload:
+            print(f"mandando para {n}")
             self.send_to(n, payload)
+            # print(f"enviei : {payload} para o {n}")
             # else:
                 # enviar mensagem vazia (nenhuma rota anunciada) é aceitável — porém enviar string vazia não trafega, então mandamos um marker vazio
                 # self.send_to(n, "")  # socket sendto permite "", será ignorado do outro lado
@@ -78,56 +83,64 @@ class Router:
         Recebe um anúncio de rotas de neighbor_ip com payload "*IP;METRIC..."
         Atualiza tabela conforme regras (métrica+1 para rotas aprendidas).
         """
-        # print(f"[DEBUG] teste nota 10 {neighbor_ip}")
         parsed = parse_route_announcement(payload)
         now = now_ts()
         changes = {"added": [], "updated": [], "removed": []}
-
         with self.lock:
-            # atualizar last heard e advertised set
             self.neigh_last_heard[neighbor_ip] = now
             prev_adv = self.neigh_adv.get(neighbor_ip, set())
             new_adv_set = set(parsed.keys())
+
             self.neigh_adv[neighbor_ip] = new_adv_set
 
+            if neighbor_ip not in self.table:
+                print(f"rota {neighbor_ip} adicionada")
+                self.table[neighbor_ip] = (1, neighbor_ip, now, 'learned')
+                self.neighbors.add(neighbor_ip)
+                changes["added"].append((neighbor_ip, 1, neighbor_ip))
+            
+
+
+
+            # print(f"atualizei isto : {self.neigh_adv[neighbor_ip]}")
             # 1) Processar rotas recebidas -> add/update
             for dest, recv_metric in parsed.items():
-                if dest == self.ip:
-                    continue  # não incluir rotas para nós mesmos
                 candidate_metric = recv_metric + 1
-                if dest not in self.table:
+                if dest == self.ip:
+                    print(f"[DEBUG] rota para nós mesmo check : {dest}")
+                    # continue  # não incluir rotas para nós mesmos
+                elif dest not in self.table:
                     # adicionar rota aprendida
+                    # print(f"[DEBUG] rota aprendida: {dest}")
+                    print(f"rota {dest} adicionada")
                     self.table[dest] = (candidate_metric, neighbor_ip, now, 'learned')
                     changes["added"].append((dest, candidate_metric, neighbor_ip))
                 else:
                     cur_metric, cur_next, _, cur_origin = self.table[dest]
                     # se a rota vier do mesmo next_hop, atualizamos timestamp e métrica (se necessário)
+                    print(f"self.table[dest]: {self.table[dest]}")
                     if neighbor_ip == cur_next:
-                        print(f"[DEBUG] já tenho a rota {dest}")
-                        if candidate_metric != cur_metric:
+                        if dest not in new_adv_set:
+                            print(f"link {dest} perdido")
+                            del self.table[dest]
+                            changes["removed"].append(dest)
+
+                        if candidate_metric < cur_metric:
                             self.table[dest] = (candidate_metric, neighbor_ip, now, cur_origin)
+                            print(f"[DEBUG] atualizei a métrica para {dest} : m: {candidate_metric}")
                             changes["updated"].append((dest, candidate_metric, neighbor_ip))
                         else:
                             # só atualizar timestamp
+                            print(f"[DEBUG] atualizei o timestamp p/ {dest}")
                             self.table[dest] = (cur_metric, cur_next, now, cur_origin)
                     else:
                         # se a nova rota for melhor, substituir (mantém origin learned)
                         if candidate_metric < cur_metric:
+                            print(f"[DEBUG] atualizado rota para {dest}")
                             self.table[dest] = (candidate_metric, neighbor_ip, now, 'learned')
                             changes["updated"].append((dest, candidate_metric, neighbor_ip))
 
-            # 2) Remover rotas que eram anunciadas por neighbor mas não são mais (inclui rotas whose next_hop==neighbor)
-            # percorre rotas que atualmente apontam para neighbor e que não aparecem no new_adv_set
-            to_remove = []
-            for dest, (metric, next_hop, _, origin) in list(self.table.items()):
-                if next_hop == neighbor_ip and dest not in new_adv_set:
-                    # retirar
-                    print(f"[DEBUG] não devo retirar a rota para {dest}")
-                    # to_remove.append(dest)
-            for dest in to_remove:
-                del self.table[dest]
-                changes["removed"].append(dest)
-
+        
         # se houve mudanças, exibir e enviar atualização imediata
         if changes["added"] or changes["updated"] or changes["removed"]:
             self.print_table(changes)
@@ -193,12 +206,29 @@ class Router:
     def listener_loop(self):
         print(f"[LISTENER] Escutando em {self.ip}:{PORT} ...")
         while not self._stop_event.is_set():
+            
+            if self.sock is None:
+                # recria o socket
+                print("recriando o socket")
+                self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self.sock.bind((self.ip, PORT))
+                self.sock.settimeout(1.0)
+
             try:
                 data, addr = self.sock.recvfrom(4096)
+                # print(f"[debug] (data, addr) : ({data}, {addr})")
             except socket.timeout:
+                # print(f"[SYSTEM] SOCKET TIMEOUT")
                 continue
-            except OSError:
-                break
+            except OSError as e:
+                print(f"[ERROR] SOCKET ERROR :  {e}")
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
+                self.sock = None
+                time.sleep(1)
+                continue
 
             msg = data.decode('utf-8', errors='replace') if data else ""
             src_ip = addr[0]
@@ -215,7 +245,7 @@ class Router:
                 # rota announcement (pode ser vazia string)
                 print(f"[RECV] Anúncio de rotas de {src_ip}: '{msg[:80]}'")
                 self.handle_route_announcement(src_ip, msg)
-
+        print(f"[SYSTEM] Não Tô escutando mais!")
     # ------------------------
     # Thread: periodic announcer
     # ------------------------
@@ -236,27 +266,35 @@ class Router:
         while not self._stop_event.is_set():
             now = now_ts()
             removed_neighbors = []
+
             with self.lock:
                 for n in list(self.neighbors):
+                    # print(f"[MONITOR] checando se {n} está ativo")
                     last = self.neigh_last_heard.get(n, 0.0)
+                    # print(f"{last} != 0.0 and ({now} - {last}) > {NEIGHBOR_TIMEOUT}")
                     if last != 0.0 and (now - last) > NEIGHBOR_TIMEOUT:
                         # neighbor considered inactive
                         removed_neighbors.append(n)
-                # para vizinhos inativos: remover rotas que são via eles e marcar last_heard=0
-                for n in removed_neighbors:
-                    print(f"[MONITOR] Vizinho {n} considerado INATIVO (sem anúncios há {NEIGHBOR_TIMEOUT}s).")
-                    # remover rotas cujo next_hop == n
-                    to_del = [dest for dest, (metric, next_hop, _, origin) in self.table.items() if next_hop == n]
-                    for dest in to_del:
-                        del self.table[dest]
-                    # limpar o registro do vizinho
-                    self.neigh_last_heard[n] = 0.0
-                    self.neigh_adv[n] = set()
-                    # not removing n from self.neighbors, porque arquivo roteadores.txt define os vizinhos possíveis.
-                    if to_del:
-                        self.print_table({"added": [], "updated": [], "removed": to_del})
-                        # notificar vizinhos imediatamente
-                        self.broadcast_routes(immediate=True)
+
+            # para vizinhos inativos: remover rotas que são via eles e marcar last_heard=0
+            for n in removed_neighbors:
+                print(f"[MONITOR] Vizinho {n} considerado INATIVO (sem anúncios há {NEIGHBOR_TIMEOUT}s).")
+                # remover rotas cujo next_hop == n
+                to_del = [dest for dest, (metric, next_hop, _, origin) in self.table.items() if next_hop == n]
+                for dest in to_del:
+                    del self.table[dest]
+                # limpar o registro do vizinho
+                self.neigh_last_heard[n] = 0.0
+                self.neigh_adv[n] = set()
+                # not removing n from self.neighbors, porque arquivo roteadores.txt define os vizinhos possíveis.
+                if to_del:
+                    print("teste de exclusão")
+                    self.print_table({"added": [], "updated": [], "removed": to_del})
+                    # notificar vizinhos imediatamente
+                    print("notificando que um saiu")
+                    self.broadcast_routes(immediate=True)
+                    print("notifiquei que um saiu")
+                 
             time.sleep(1.0)
 
     # ------------------------

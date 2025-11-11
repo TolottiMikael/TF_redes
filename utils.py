@@ -20,8 +20,8 @@ def serialize_table_for_neighbor(table: Dict[str, RouteEntry], neighbor_ip: str,
     for dest, (metric, next_hop, _, origin) in table.items():
         if dest == self_ip:
             continue
-        if origin == 'learned' and next_hop == neighbor_ip:
-            continue
+        # if origin == 'learned' and next_hop == neighbor_ip:
+        #     continue
         parts.append(f"*{dest};{metric}")
     return "".join(parts)
 
