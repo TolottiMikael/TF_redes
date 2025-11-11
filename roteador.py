@@ -28,7 +28,6 @@ class Router:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((self.ip, PORT))
         self.sock.settimeout(1.0)
-
         # control
         self._stop_event = threading.Event()
 
@@ -54,11 +53,11 @@ class Router:
             table_copy = dict(self.table)
         for n in list(self.neighbors):
             payload = serialize_table_for_neighbor(table_copy, n, self.ip)
-            if payload:
-                self.send_to(n, payload)
-            else:
+            # if payload:
+            self.send_to(n, payload)
+            # else:
                 # enviar mensagem vazia (nenhuma rota anunciada) é aceitável — porém enviar string vazia não trafega, então mandamos um marker vazio
-                self.send_to(n, "")  # socket sendto permite "", será ignorado do outro lado
+                # self.send_to(n, "")  # socket sendto permite "", será ignorado do outro lado
         if immediate:
             print("[ROUTER] Enviado anúncio imediato de rotas para vizinhos.")
 
@@ -79,6 +78,7 @@ class Router:
         Recebe um anúncio de rotas de neighbor_ip com payload "*IP;METRIC..."
         Atualiza tabela conforme regras (métrica+1 para rotas aprendidas).
         """
+        # print(f"[DEBUG] teste nota 10 {neighbor_ip}")
         parsed = parse_route_announcement(payload)
         now = now_ts()
         changes = {"added": [], "updated": [], "removed": []}
@@ -103,6 +103,7 @@ class Router:
                     cur_metric, cur_next, _, cur_origin = self.table[dest]
                     # se a rota vier do mesmo next_hop, atualizamos timestamp e métrica (se necessário)
                     if neighbor_ip == cur_next:
+                        print(f"[DEBUG] já tenho a rota {dest}")
                         if candidate_metric != cur_metric:
                             self.table[dest] = (candidate_metric, neighbor_ip, now, cur_origin)
                             changes["updated"].append((dest, candidate_metric, neighbor_ip))
@@ -121,7 +122,8 @@ class Router:
             for dest, (metric, next_hop, _, origin) in list(self.table.items()):
                 if next_hop == neighbor_ip and dest not in new_adv_set:
                     # retirar
-                    to_remove.append(dest)
+                    print(f"[DEBUG] não devo retirar a rota para {dest}")
+                    # to_remove.append(dest)
             for dest in to_remove:
                 del self.table[dest]
                 changes["removed"].append(dest)
@@ -206,7 +208,7 @@ class Router:
                 print(f"[RECV] Anúncio @ de {src_ip}: {advertised_ip}")
                 self.handle_router_announcement(src_ip, advertised_ip)
             elif msg.startswith("!"):
-                # mensagem de texto roteada
+                # mensagem de texto roteadar
                 print(f"[RECV] Mensagem de texto de {src_ip}: {msg}")
                 self.handle_text_message(msg, src_ip)
             else:
@@ -222,6 +224,7 @@ class Router:
         while not self._stop_event.is_set():
             now = time.time()
             if now >= next_send:
+                print(f"[ANNOUNCER] Enviando anúncio de rotas.")
                 self.broadcast_routes()
                 next_send = now + ROUTE_ANNOUNCE_INTERVAL
             time.sleep(0.2)
