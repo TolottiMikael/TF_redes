@@ -244,7 +244,7 @@ class Router:
             next_hop = entry[1]
 
         # repassar
-        print(f"[ROUTE] Encaminhando mensagem para {dest} via {next_hop} (origem {origin})")
+        print(f"[ROUTE] Encaminhando {message} para {dest} via {next_hop} (origem {origin})")
         self.send_to(next_hop, raw_msg)
 
     # ------------------------

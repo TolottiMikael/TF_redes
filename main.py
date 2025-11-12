@@ -1,9 +1,7 @@
 # main.py
 import queue
 import socket
-import sys
 import threading
-import time
 from roteador import Router
 from logging_utils import safe_print
 
@@ -73,7 +71,7 @@ def cli_loop(router: Router):
                 router.print_table()
                 continue
 
-            if line.lower() in ("sair", "exit", "quit"):
+            if line.lower() in ("sair"):
                 safe_print("[CLI] Encerrando interação do usuário.")
                 stop_cli.set()
                 break
