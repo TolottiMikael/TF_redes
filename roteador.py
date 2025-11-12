@@ -331,7 +331,7 @@ class Router:
                 to_del = [dest for dest, (metric, next_hop, _, origin) in self.table.items() if next_hop == n]
 
                 for dest in to_del:
-                    # removendo apenas os learned, porém talvez seja necessário remover até os que estão no txt
+                    # removendo apenas os learned
                     if self.table[dest][3] == "learned":
                         self.neighbors.remove(n)
                         # print(f"{self.neighbors}  ")
