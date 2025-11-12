@@ -27,7 +27,9 @@ def load_neighbors(filename: str) -> set:
     neighbors = set()
     try:
         with open(filename, "r") as f:
+            print(f"arquivo f {f} ")
             for line in f:
+                print(f"resolvendo {line} agora mesmo")
                 ip = line.strip()
                 if ip:
                     neighbors.add(ip)
@@ -65,7 +67,6 @@ def cli_loop(router: Router):
 
             if not line:
                 continue
-
             # Comando para imprimir a tabela de roteamento atual
             if line.strip().upper() == 'R':
                 safe_print("[CLI] Tabela de roteamento atual:")
@@ -80,7 +81,7 @@ def cli_loop(router: Router):
             if ";" not in line:
                 safe_print("Formato inválido. Use: 192.168.x.y;mensagem ou 'R' para mostrar a tabela")
                 continue
-
+            
             dest, text = line.split(";", 1)
             dest, text = dest.strip(), text.strip()
             if not dest or not text:
@@ -89,7 +90,7 @@ def cli_loop(router: Router):
 
             origin = router.ip
             raw = f"!{origin};{dest};{text}"
-
+            safe_print('teste2')
             if dest == origin:
                 router.handle_text_message(raw, origin)
             else:
