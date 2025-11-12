@@ -42,7 +42,7 @@ class Router:
     # ------------------------
     def send_to(self, dest_ip: str, message: str):
         try:
-            # print(f"enviando msg para ({dest_ip},{PORT}) : => {message}")
+            print(f"[DEBUG] Enviando para ({dest_ip},{PORT}) : => {message}")
             self.sock.sendto(message.encode('utf-8'), (dest_ip, PORT))
         except OSError as e:
             print(f"[WARN] Erro ao enviar para {dest_ip}: {e}")
