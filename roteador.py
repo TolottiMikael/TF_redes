@@ -331,9 +331,10 @@ class Router:
                 to_del = [dest for dest, (metric, next_hop, _, origin) in self.table.items() if next_hop == n]
 
                 for dest in to_del:
+                    # removendo apenas os learned, porém talvez seja necessário remover até os que estão no txt
                     if self.table[dest][3] == "learned":
                         self.neighbors.remove(n)
-                        print(f"{self.neighbors}  ")
+                        # print(f"{self.neighbors}  ")
                     del self.table[dest]
 
                 # limpar o registro do vizinho
@@ -341,12 +342,12 @@ class Router:
                 self.neigh_adv[n] = set()
                 # not removing n from self.neighbors, porque arquivo roteadores.txt define os vizinhos possíveis.
                 if to_del:
-                    print("teste de exclusão")
+                    # print("teste de exclusão")
                     self.print_table({"added": [], "updated": [], "removed": to_del})
                     # notificar vizinhos imediatamente
-                    print("notificando que um saiu")
+                    # print("notificando que um saiu")
                     self.broadcast_routes(immediate=True)
-                    print("notifiquei que um saiu")
+                    # print("notifiquei que um saiu")
                  
             time.sleep(1.0)
 
@@ -354,9 +355,9 @@ class Router:
     # Util: exibir tabela e diffs
     # ------------------------
     def print_table(self, changes=None):
-        print("posso entrar no self lock pelo print table?")
+        # print("posso entrar no self lock pelo print table?")
         with self.lock:
-            print("ENTREI no self lock pelo print table?")
+            # print("ENTREI no self lock pelo print table?")
             tabelosa = self.table.items()
             IP_print = self.ip
         lines = []
